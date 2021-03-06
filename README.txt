@@ -22,5 +22,9 @@ This module requires the following R modules, which can all be found on CRAN mir
  * MGLM
  * pracma
 
+Any questions or comments about the manuscript can be addressed to the corresponding author Peter Freddolino (petefred@umich.edu).
+
+Additional questions about the code in this repository can be addressed to Ali Farhat (alimf@umich.edu).
+
 
   
