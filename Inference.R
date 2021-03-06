@@ -1,16 +1,11 @@
 library(abind)
-#library(dyplr)
 library(foreach)
 library(doParallel)
 library(MASS)
 library(fitdistrplus)
 library(MGLM)
 
-source("/home/alimf/Histones/Scripts/Eq.R")
-
-#Column indicates the state where relevant Swi6 started, rows indicate where 
-#relevant Swi6 ended at the end of the experiment. 
-
+source("Eq.R")
 
 
 #An integer indicating the number of single tracks in an experiment. 
@@ -223,7 +218,6 @@ global.assign = function(raw.experiment, equilibria, kill.rates){
     mols = round(totalmols*equilibria)
     mode(mols) = "integer"
 
-
     #This helps generate the proportion of molecules in each state from the numbers the simulations generate
     matrix.of.oneovermols = matrix(rep(1/mols,nrow(raw.experiment)),ncol = ncol(raw.experiment),byrow = TRUE)
 
@@ -241,7 +235,6 @@ global.assign = function(raw.experiment, equilibria, kill.rates){
             exprat[,j,k] = experiment[,j,k]/sum(experiment[,j,k])
         }
     }
-
 
 
     #We are not measuring concentrations with these: merely proportion of
@@ -451,7 +444,7 @@ log.likelihood.experiment = function(current.rates,experiments.per.iter){
 #       experiments.per.iter: an integer indicating how many simulations should
 #                             be run by the calculator
 #
-# Returns: a float of the approximate density of the rates
+# Returns: a float of the approximate ln posterior density of the rates
 
 log.likelihood.main = function(current.rates, experiments.per.iter){
 
@@ -649,8 +642,6 @@ do.move = function(full.current.rates,experiments.per.iter){
 	print(move)
 
 	new.rates = switch(move,move.all.rates(full.current.rates$rates),move.one.rate(full.current.rates$rates),scale.opposite.rate(full.current.rates$rates),change.one.rate(full.current.rates$rates),change.all.rate(full.current.rates$rates))
-	#	new.rates = move.all.rates(full.current.rates$rates)
-	#	new.rates = move.one.rate(full.current.rates$rates)
 
 	print("old likelihood")
 	print(full.current.rates$likelihood)
@@ -671,8 +662,6 @@ do.move = function(full.current.rates,experiments.per.iter){
 	print("new like")
 	print(new.like)
 
-	print(paste("Distance",sqrt(sum((new.rates-full.current.rates$rates)^2))))
-
 	if(accept.test(new.like.ast,full.current.rates$likelihood)){
 		return(list(rates = new.rates, likelihood = new.like, accepted = TRUE,move = move))
 	}
@@ -682,7 +671,7 @@ do.move = function(full.current.rates,experiments.per.iter){
 
 }
 
-#this is simply a wrapper for the abind function to make it easier to implement for the parallizer
+#this is simply a wrapper for the abind function to make it easier to implement for the parallelizer
 special.abind = function(arr1,arr2){
 	
 	return(abind(arr1,arr2,along = 3))

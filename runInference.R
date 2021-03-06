@@ -4,34 +4,27 @@ library(foreach)
 source("Eq.R")
 source("Inference.R")
 
+#Usage: Rscript runInference.R numberOfCores nameOfRun rdsFileArrayOfExperimentalData numberOfStepsForRun OutputFilesLocation OptionalBooleanForOnlyAdjacentTransitions OptionalInitialStateForMCMC
+
 args = commandArgs(trailingOnly=TRUE)
 
-nodes = as.numeric(args[1])
+cores = args[1]
 
-corespernode = as.numeric(args[2])
+prefix = args[2]
 
-prefix = args[3]
 print(paste("This chain is ", prefix,".rds",sep = ""))
 print(prefix)
 
-superexperiment = readRDS(args[4])
 
-if(is.list(superexperiment)){
-    experiment = superexperiment$data
-    equilibria = superexperiment$eqs
-} else{
-    experiment = superexperiment
-    equilibria = calcEQs(experiment)
-}
+experiment = readRDS(args[3])
+equilibria = calcEQs(experiment)
 
+steps = as.numeric(args[4])
 
+output = args[5]
 
-steps = as.numeric(args[5])
-
-output = args[6]
-
-if(length(args)>6){
-    adjacentOnly = as.logical(args[7])
+if(length(args)>5){
+    adjacentOnly = as.logical(args[6])
 } else{
     adjacentOnly = FALSE
 }
@@ -39,7 +32,7 @@ if(length(args)>6){
 if(is.na(adjacentOnly)){
     
     adjacentOnly = FALSE
-    args[8] = args[7]
+    args[7] = args[6]
 
 }
 
@@ -56,13 +49,12 @@ if(adjacentOnly){
     }    
 }
 
-if(length(args)>7){
-    pars = readRDS(args[8])
+if(length(args)>6){
+    pars = readRDS(args[7])
     pars.init = pars[[length(pars)]]$rates
 }
 
 
-cores = corespernode*nodes
 
 sink(paste(output,prefix,".out", sep = ""))
 
@@ -72,10 +64,10 @@ if(exists("pars.init")){
 
     print(pars.init)
 
-    main(experiment,equilibria = equilibria, total.iter = steps,experiments.per.iter = 10000,cores = corespernode*nodes,name = paste(output,prefix,sep = ''),init.rates=pars.init, kill.rates = kill.rates)
+    main(experiment,equilibria = equilibria, total.iter = steps,experiments.per.iter = 10000,cores = cores,name = paste(output,prefix,sep = ''),init.rates=pars.init, kill.rates = kill.rates)
 } else{
 
-    main(experiment,equilibria = equilibria, total.iter = steps,experiments.per.iter = 10000,cores = corespernode*nodes,name = paste(output,prefix, sep =''), kill.rates = kill.rates)
+    main(experiment,equilibria = equilibria, total.iter = steps,experiments.per.iter = 10000,cores = cores,name = paste(output,prefix, sep =''), kill.rates = kill.rates)
 }
 Rprof(NULL)
 

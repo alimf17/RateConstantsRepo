@@ -1,26 +1,14 @@
 library(abind)
-#library(dyplr)
 library(foreach)
 library(doParallel)
 library(MASS)
 library(fitdistrplus)
 library(MGLM)
 
-source("/home/alimf/Histones/Scripts/Eq.R")
-
-#Column indicates the state where relevant Swi6 started, rows indicate where 
-#relevant Swi6 ended at the end of the experiment. Note that I adjucated that <0.01
-#is 0.005, and added 0.005 (largest plausible round errors) to these transitions 
-#until each column summed to 1, starting first with the highest probability 
-#transitions
-#experiment = matrix(c(0.755,0.165,0.075,0.005,0.215,0.585,0.195,0.005,0.04,0.08,0.79,0.09,0.01,0.005,0.13,0.855), nrow = 4, ncol = 4)
+source("Eq.R")
 
 
-
-#An integer indicating the number of molecules we're tracking in a trial. Chose 300 because it's in range and gives integer
-#results with the equilibria
-
-#Changed this to 1500 because, according to Saikat, experiments amalgamate single molecule tracks in individual cells, and total about 1000-2000 molecules
+#An integer indicating the number of single tracks in an experiment.
 totalmols = 1500
 
 
@@ -29,15 +17,16 @@ total.move = 8
 
 #Length of the experiment in seconds
 tau = 0.04
+
+#The number of time steps in a single simulation.
+#Increase if your simulations fail to converge, but this comes with a compute time trade off.
 steps = 100
 dt = tau/steps
 
-#Move step size: move is a multiplication by the exponential of a variable selected
-#from a normal distrubution. This has the advantage of not altering the "rates" that
-#indicate a "movement" from a Swi6 state to itself: for the sake of these simulations,
-#these are coded to stay at 0
+#Move step size: many moves are additions to a log space parameter of a variable selected
+#from a t distrubution with sd ln.sd and df degrees of freedom.
+#This has the advantage of not altering parameters that are fixed at -Inf
 ln.sd = 0.2
-
 df = 10
 
 #This defines the bounds of a log uniform prior
@@ -46,20 +35,43 @@ up.mag = 10
 
 
 
-#Begin the count of accepted moves
+#We track the number of moves accepted by the inference: we want accepted/total moves ~ 0.1-0.2
+#Higher, and the moves aren't as big as they could be to move the inference quickly
+#Lower, and the algorithm will get stuck too often
 accepted = 0
 
-#Begin the counts of each proposed move type
+#We track the number of moves each type of move proposed by the inference
+#we want accepted/total moves ~ 0.1-0.2 for each move type, for the same reasons as above
 proposed.moves = rep(0,total.move)
-
-#Begin the counts of each accepted move type
 accepted.moves = rep(0,total.move)
 
-#number of saves
+
+#Number of times the program saves its current chain. Saving every step is
+#too computationally costly, but if the program quits in the middle, we want to
+#have our progress saved. Tune this for your optimal trade off
 save.runs = 40
 
-#The executable main method. total.iter is the monte carlo chain length, experiments.per.iter
-#is the number of simulations run per experiment
+
+# Summary: This is the actual method that needs to be executed for the simulation
+#
+# Parameters:
+#
+#  raw.experiment: An array with dimensions SxSxN, S = number of chemical states, N = number of experiments
+#  equilibria: The equilibria of the experiments. This mainly matters to know how many molecules to bin in each state
+#  total.iter: The number of steps for the simulation to run
+#  experiments.per.iter: The number of simulations to run for the
+#                        Approximate Bayesian Computation of the likelihood
+#  cores: The number of CPUs available for the program to run
+#  name: A name for the monte carlo chain. Unique names prevent output files from clobbering each other
+#  init.rates: Some initial state for the MCMC to begin inference from
+#  kill.rates: A binary hollow symmetric matrix with dimensions SxS.
+#              0 entries mean the corresponding transition is chemically forbidden
+#              1 entries mean the corresponding transition is allowed
+#              If rates are decreasing too much and not converging, it can mean
+#              that the transition does not actually occur
+#
+# Returns: Nothing. Instead, it saves several files, including an RDS of the chain.
+
 main = function(raw.experiment, equilibria=calcEQs(raw.experiment), total.iter = 100, experiments.per.iter = 3000,cores=1, name = "",init.eqmag = NULL, kill.rates = (1-diag(length(equilibria)))) {
 
     if(!is.null(init.eqmag)){
@@ -71,7 +83,7 @@ main = function(raw.experiment, equilibria=calcEQs(raw.experiment), total.iter =
     step.save = max(floor(total.iter/save.runs),1)
 
     #We forbid transition possibilities from being nonsymmetric
-    if(!isSymmetric(kill.rates) || any(diag(kill.rates) != 0)){
+    if(!isSymmetric(kill.rates) || any(diag(kill.rates) != 0) || any(kill.rates !=0 | kill.rates != 1)){
         stop("Non symmetric transition allowances are forbidden, and we require self transition rates to be set at zero")
     }
 
@@ -95,7 +107,14 @@ main = function(raw.experiment, equilibria=calcEQs(raw.experiment), total.iter =
     #the log likelihood of these rate constants, and whether the preceeding move was accepted or not
     parameter.inference = list(init.eqmag)
 
-
+    #With the stochastic way our likelihood is calculated, the inference chain
+    #can get stuck because the likelihood is calculated as higher than it truly is.
+    #This can't be "fixed" because there is a selection effect in play:
+    #The number of likelihood calculations is high enough that eventually,
+    #our stochastic likelihood calculation randomly picks a likelihood much
+    #higher than the actual one
+    #This variable tracks the number of rejections in a row. When it's too high,
+    #the log likelihood is recalculated.
     reject.count = 0
 
     #This steps through the monte carlo chain
@@ -109,13 +128,18 @@ main = function(raw.experiment, equilibria=calcEQs(raw.experiment), total.iter =
 	    #This calculates the number of moves proposed of each type
 	    proposed.moves[parameter.inference[[step+1]]$move] = proposed.moves[parameter.inference[[step+1]]$move]+1
  
-	    #This calculates the number of accepted moves (other than the initial state): I can tune my move steps according to this
+	    #This calculates the number of accepted moves (other than the initial state):
+        #Tune move step sizes so that 20% of moves of each type are accepted
 	    if(parameter.inference[[step+1]]$accepted){
 		    accepted = accepted+1
             reject.count = 0
 		    accepted.moves[parameter.inference[[step+1]]$move] = accepted.moves[parameter.inference[[step+1]]$move]+1
 	    } else{
             reject.count = reject.count+1
+
+            #As mentioned before, we recalculate likelihoods if there are too
+            #many rejections in a row. Change this if statement here to decide
+            #what counts as "too many" for you
             if(reject.count > 20){
                 parameter.inference[[step+1]]$likelihood = log.likelihood.main(parameter.inference[[step+1]]$eqmag, experiments.per.iter)
                 reject.count = 0
@@ -125,6 +149,11 @@ main = function(raw.experiment, equilibria=calcEQs(raw.experiment), total.iter =
 	    if(((step %% step.save) == 0) || (step == total.iter)){
 		    print(parameter.inference[[step+1]])
             print(paste(name,"_savestate.rds",sep=""))
+
+			#We save our saved state twice on purpose.
+            #The first says which step the inference stopped at
+            #while the second gives the chain a convenient place for the chain
+            #to pick up from
 		    saveRDS(parameter.inference,paste(name,"_",step,"parameters.rds",sep = ""))
             saveRDS(parameter.inference,paste(name,"_savestate.rds",sep=""))
         }
@@ -133,59 +162,69 @@ main = function(raw.experiment, equilibria=calcEQs(raw.experiment), total.iter =
 	    print(accepted.moves/proposed.moves)
     }
 
-likelihoods = c()
+	saveRDS(parameter.inference,paste(name,"_final_parameters.rds",sep = ""))
 
-#I want to know how the likelihood evolves	
-for(tests in parameter.inference){
-	likelihoods = c(likelihoods,tests$likelihood)
+    likelihoods = numeric(length(parameter.inference))
+
+    #We also save a vector of likelihoods to track their evolution.
+    #Convergent likelihoods look like a fuzzy caterpillar
+    #To a first approximation
+    for(i in 1:length(likelihoods)){
+        tests = paramter.inference[[i]]
+        likelihoods[i] = tests$likelihood
+    }
+    png(file=paste(name,"Likelihoods.png"))
+    plot(likelihoods)
+    dev.off()
+
+
+
+	#The last output of the chain is a simple prediction of the rate constants.
+	#I also save an RDS of parameter.inference in case there is something more 
+	#sophisticated I want to try
+	trans.predict = experiment.simulation(eqmag.to.rates(parameter.inference[[total.iter+1]][["eqmag"]]))*matrix.of.oneovermols
+
+
+	print("Parameters")
+	print(eqmag.to.rates(parameter.inference[[total.iter+1]][["eqmag"]]))
+	print("Predicted transitions")
+	print(trans.predict)
+	print("Experimental transitions")
+	print(experiment)
+	print("Proportion of accepted moves")
+	print(accepted/(total.iter))
+
+
+	#stop cluster
+	stopCluster(cl)
+
 }
 
-
-saveRDS(parameter.inference,paste(name,"_final_parameters.rds",sep = ""))
-
-#The last output of the chain is a simple prediction of the rate constants.
-#I also save an RDS of parameter.inference in case there is something more 
-#sophisticated I want to try
-trans.predict = experiment.simulation(eqmag.to.rates(parameter.inference[[total.iter+1]][["eqmag"]]))*matrix.of.oneovermols
-
-
-png(file="Likelihoods.png")
-plot(likelihoods)
-dev.off()
-
-print("Parameters")
-print(eqmag.to.rates(parameter.inference[[total.iter+1]][["eqmag"]]))
-print("Predicted transitions")
-print(trans.predict)
-print("Experimental transitions")
-print(experiment)
-print("Proportion of accepted moves")
-print(accepted/(total.iter))
-
-
-#stop cluster
-stopCluster(cl)
-
-}
+# Summary: This method saves several global constants based on the experimental data
+#
+# Parameters:
+#
+#  raw.experiment: An array with dimensions SxSxN, S = number of chemical states, N = number of experiments
+#  equilibria: The equilibria of the experiments. This mainly matters to know how many molecules to bin in each state
+#  kill.rates: A binary hollow symmetric matrix with dimensions SxS.
+#              0 entries mean the corresponding transition is chemically forbidden
+#              1 entries mean the corresponding transition is allowed
+#              If rates are decreasing too much and not converging, it can mean
+#              that the transition does not actually occur
+#
+# Returns: Nothing.
 
 global.assign = function(raw.experiment, equilibria, kill.rates){
-    #How many types ,experiments.per.iterof small molecules there are at equilibirium
+    
+	#How many types of each type of molecule there are at equilibirium
+    #There can be a rounding defect where we lose one or two molecules because of the rounding 
     mols = round(totalmols*equilibria)
+    mode(mols) = "integer"  
 
-
-    print("mols")
-    print(mols)
-
-    mode(mols) = "integer"
-
-    print("rounding.defect")
-    print(max(abs((totalmols*equilibria - mols)/(totalmols*equilibria))))
-
-    #This helps generate the proportion of changed molecules
+    #This helps generate the proportion of molecules in each state from the numbers the simulations generate
     matrix.of.oneovermols = matrix(rep(1/mols,nrow(raw.experiment)),ncol = ncol(raw.experiment),byrow = TRUE)
 
     experiment = array(dim = dim(raw.experiment))
-
     for(j in 1:ncol(raw.experiment)){
         experiment[,j,] = round(raw.experiment[,j,]*mols[j])
     }
@@ -199,14 +238,6 @@ global.assign = function(raw.experiment, equilibria, kill.rates){
         }
     }
 
-
-
-    print("raw")
-    print(apply(raw.experiment, c(1,2), mean))
-    print("exprat")
-    print(apply(exprat, c(1,2), mean)) 
-    print("Exp")
-    print(apply(experiment, c(1,2), mean))
     
     #We are not measuring concentrations with these: merely proportion of
     #the molecule of each original form. We can treat each initial
@@ -228,6 +259,20 @@ global.assign = function(raw.experiment, equilibria, kill.rates){
     assign('init.cond.rates',init.cond.rates,envir=.GlobalEnv)
     assign('kill.eqmag',log(kill.rates),envir=.GlobalEnv)
 }
+
+
+# Summary: This method calculates the conversion of our parameter matrix in rate space
+#		   to ln-Keq, ln-magnitude space
+#
+# Parameters:
+#       current.rates: a hollow SxS nonnegative matrix, where the entry of the
+#                      of the jth column in the ith row represents the rate
+#                      of transition from state j to state i in units 1/sec.
+#
+# Returns: an SxS matrix M, where M[i,j] = ln(Keq) of the reaction from
+#		   state j to state i if i > j, ln(rate constant of reaction from 
+#		   state j to state i in units 1/sec) if i < j, or -Inf if j == i. For expedience,
+#		   all forbidden reaction will have ln(Keq) == ln(rate) == -Inf 
 
 rates.to.eqmag = function(current.rates){
 
@@ -259,6 +304,21 @@ rates.to.eqmag = function(current.rates){
 
 }
 
+# Summary: This method calculates the conversion of our parameter matrix in rate space
+#		   to ln-Keq, ln-magnitude space
+#
+# 
+#
+# Parameters: 
+#		   current.eqmag: an SxS matrix M, where M[i,j] = ln(Keq) of the reaction from
+#		   				  state j to state i if i > j, ln(rate constant of reaction from 
+#		   				  state j to state i in units 1/sec) if i < j, or -Inf if j == i. For expedience,
+#		   				  all forbidden reaction will have ln(Keq) == ln(rate) == -Inf 
+#
+# Returns: a hollow SxS nonnegative matrix, where the entry of the
+#          of the jth column in the ith row represents the rate
+#          of transition from state j to state i in units 1/sec.
+
 eqmag.to.rates = function(current.eqmag){
 
     ro = nrow(current.eqmag)
@@ -280,7 +340,19 @@ eqmag.to.rates = function(current.eqmag){
     return(current.rates)
 }
 
-#log likelihood calculations
+
+# Summary: This method calculates a single simulation of the experimental data
+#          based one set of rate constants
+#
+# Parameters:
+#       current.rates: a hollow SxS nonnegative matrix, where the entry of the
+#                      of the jth column in the ith row represents the rate
+#                      of transition from state j to state i in units 1/sec.
+#
+# Returns: An SxS matrix of integers, where the entry of the jth column and
+#          the ith row is the number of molecules which were in state j at the
+#          beginning of the simulated experiment and state i at the end
+
 experiment.simulation = function(current.rates){
 	
 	time = 0
@@ -330,6 +402,21 @@ experiment.simulation = function(current.rates){
 	
 }
 
+# Summary: This method calculates many simulations of the experimental data
+#          based one set of rate constants
+#
+# Parameters:
+#       current.rates: a hollow SxS nonnegative matrix, where the entry of the
+#                      of the jth column in the ith row represents the rate
+#                      of transition from state j to state i in units 1/sec.
+#       experiments.per.iter: an integer indicating how many simulations should
+#                             be run by the calculator
+#
+# Returns: An SxSxexperiments.per.iter matrix of integers, where the entry
+#          in the kth layer of the jth column and the ith row is the number
+#          of molecules which were in state j at the beginning of the kth
+#          simulated experiment and state i at the end
+
 simulations.calculator = function(current.rates,experiments.per.iter){
 
 
@@ -364,36 +451,57 @@ simulations.calculator = function(current.rates,experiments.per.iter){
 	return(transition.big.array)
 }
 
+# Summary: This method calculates the ln density of the rates prior distribution
+#          assuming a set of independent Jeffries' priors for each positive rate
+#
+# Parameters:
+#		   current.eqmag: an SxS matrix M, where M[i,j] = ln(Keq) of the reaction from
+#		   				  state j to state i if i > j, ln(rate constant of reaction from 
+#		   				  state j to state i in units 1/sec) if i < j, or -Inf if j == i. For expedience,
+#		   				  all forbidden reaction will have ln(Keq) == ln(rate) == -Inf 
+#
+# Returns: the ln density of the joint rates prior
+
 eqmag.prior = function(current.eqmag){
  	
     current.rates = eqmag.to.rates(current.eqmag)
 
+	
+    #We had originally intended a ln-uniform prior for the rates.
+    #When we switched to a Jeffries prior, we forgot to remove the
+    #constant log((up.mag-low.mag)) term. This had no ultimate effect
+    #on the simulation, as it was a constant that was normalized away from the posterior.
+    #However, we are leaving it in for transparency, and will remove it with our next push.
 	prior = -(log((current.rates))+log((up.mag-low.mag)))
 
+    #This assumes that there's no way for active rates to reach zero with the MCMC moves.
+    #This is true for our move set, but might not be for yours if you change them.
 	prior[current.rates == 0] = 0
 
 	return(sum(prior))
 }
 
+# Summary: This method calculates the ln likelihood of one set of rates with Approximate
+#          Bayesian Computation
+#
+# Parameters:
+#       current.rates: a hollow SxS nonnegative matrix, where the entry of the
+#                      of the jth column in the ith row represents the rate
+#                      of transition from state j to state i in units 1/sec.
+#       experiments.per.iter: an integer indicating how many simulations should
+#                             be run by the calculator
+#
+# Returns: a float of the approximate ln likelihood of the rates
+
 log.likelihood.experiment = function(current.rates,experiments.per.iter){
 
 	data = simulations.calculator(current.rates,experiments.per.iter)
-
-    means = apply(experiment,c(1,2),mean)
-
-    per.mol = matrix(numeric(length(means)),nrow = nrow(means))
-
-    per.mol[initial.conditions != 0] = 1/initial.conditions[initial.conditions != 0]
-
-    mean.transitions = means%*%per.mol
-
-    #alphas.matrix = sapply(apply(aperm(data,c(3,2,1)),2,MGLMfit,dist="MN"),slot, "estimate")
 
     alphas.matrix = matrix(nrow=dim(data)[1], ncol = dim(data)[2])
 
     for(j in 1:dim(data)[2]){
 
-        #This is transposed to fit MGLMfit, where COLUMNs are categories
+        #This is transposed to fit MGLMfit compatibility
         tofit = t(data[,j,]) 
 
         alphas.matrix[,j] = MGLMfit(tofit, dist="MN")@estimate
@@ -409,20 +517,20 @@ log.likelihood.experiment = function(current.rates,experiments.per.iter){
     }
 
 
-    #if(sample.int(500,1) == 500){
-        print("Random Double Check of Rates Matrix and logliks")
-        print(alphas.matrix)
-        print(logliks)
-        print("experimental rates")
-        print(mean.transitions)
-        
-    #}
-    print(which(logliks == -Inf,arr.ind = TRUE))
-    print(experiment[which(logliks == -Inf,arr.ind = TRUE)])
-
-    return(sum(logliks))
-
 }
+
+# Summary: this method calculates the ln density of one set of rates with approximate
+#          bayesian computation
+#
+# Parameters:
+#		current.eqmag: an SxS matrix M, where M[i,j] = ln(Keq) of the reaction from
+#		   				  state j to state i if i > j, ln(rate constant of reaction from 
+#		   				  state j to state i in units 1/sec) if i < j, or -Inf if j == i. For expedience,
+#		   				  all forbidden reaction will have ln(Keq) == ln(rate) == -Inf 
+#       experiments.per.iter: an integer indicating how many simulations should
+#                             be run by the calculator
+#
+# Returns: a float of the approximate ln posterior density of the rates
 
 log.likelihood.main = function(current.eqmag, experiments.per.iter){
 
@@ -437,6 +545,16 @@ log.likelihood.main = function(current.eqmag, experiments.per.iter){
 		
 }
 
+
+# Summary: this method randomly picks an ordered pair of matrix coordinates corresponding to the ln(magnitude)
+#		   of a reaction, where the magnitude is the rate constant of the reaction from the higher indexed 
+#		   state to the lower indexed one
+# Parameters:
+#		current.eqmag: an SxS matrix M, where M[i,j] = ln(Keq) of the reaction from
+#		   				  state j to state i if i > j, ln(rate constant of reaction from 
+#		   				  state j to state i in units 1/sec) if i < j, or -Inf if j == i. For expedience,
+#		   				  all forbidden reaction will have ln(Keq) == ln(rate) == -Inf 
+# Returns: an ordered pair of integers where the ordinate is strictly greater than the abscissa
 
 pick.mag = function(current.eqmag){
 
@@ -482,6 +600,15 @@ pick.mag = function(current.eqmag){
 
 }
 
+# Summary: this method randomly picks an ordered pair of matrix coordinates corresponding to the ln(Keq)
+#		   of a reaction, where the equilibrium constant assumes that the forward reaction goes from the
+#		   lower indexed state to the higher indexed one
+# Parameters:
+#		current.eqmag: an SxS matrix M, where M[i,j] = ln(Keq) of the reaction from
+#		   				  state j to state i if i > j, ln(rate constant of reaction from 
+#		   				  state j to state i in units 1/sec) if i < j, or -Inf if j == i. For expedience,
+#		   				  all forbidden reaction will have ln(Keq) == ln(rate) == -Inf 
+# Returns: an ordered pair of integers where the ordinate is strictly less than the abscissa
 pick.eq = function(current.eqmag){
 
     #The number of entries in the off diagonal lower triangular portion of an nxn square matrix is the n-1 triangle number
@@ -528,8 +655,14 @@ pick.eq = function(current.eqmag){
 
 }
 
-#moves
 
+# Summary: this method calculates whether we accept or reject a given move of the MCMC
+#
+# Parameters:
+#       lik.trial: the posterior density of the proposed new state in the inference
+#       lik.cur: the posterior density of the prior state in the inference
+#
+# Returns: a boolean indicating whether the proposed move is accepted or not
 
 accept.test = function(lik.trial, lik.cur) {
 	lhr = lik.trial - lik.cur
@@ -563,7 +696,18 @@ accept.test = function(lik.trial, lik.cur) {
 	}
 }
 
-
+# Summary: this method proposes a move generated by adding ln-t distributed variables to all reaction magnitudes`
+#
+# Parameters:
+#       current.eqmag: an SxS matrix M, where M[i,j] = ln(Keq) of the reaction from
+#		   				  state j to state i if i > j, ln(rate constant of reaction from 
+#		   				  state j to state i in units 1/sec) if i < j, or -Inf if j == i. For expedience,
+#		   				  all forbidden reaction will have ln(Keq) == ln(rate) == -Inf 
+#
+# Returns: an SxS matrix M, where M[i,j] = ln(Keq) of the reaction from
+#		   state j to state i if i > j, ln(rate constant of reaction from 
+#		   state j to state i in units 1/sec) if i < j, or -Inf if j == i. For expedience,
+#		    all forbidden reaction will have ln(Keq) == ln(rate) == -Inf 
 move.all.mags = function(current.eqmag){
 
 	new.eqmag = current.eqmag
@@ -579,6 +723,18 @@ move.all.mags = function(current.eqmag){
 
 }
 
+# Summary: this method proposes a move generated by adding a ln-t distributed variable to a random reaction magnitude`
+#
+# Parameters:
+#       current.eqmag: an SxS matrix M, where M[i,j] = ln(Keq) of the reaction from
+#		   				  state j to state i if i > j, ln(rate constant of reaction from 
+#		   				  state j to state i in units 1/sec) if i < j, or -Inf if j == i. For expedience,
+#		   				  all forbidden reaction will have ln(Keq) == ln(rate) == -Inf 
+#
+# Returns: an SxS matrix M, where M[i,j] = ln(Keq) of the reaction from
+#		   state j to state i if i > j, ln(rate constant of reaction from 
+#		   state j to state i in units 1/sec) if i < j, or -Inf if j == i. For expedience,
+#		    all forbidden reaction will have ln(Keq) == ln(rate) == -Inf 
 move.one.mag = function(current.eqmag){
 	
 	new.eqmag = current.eqmag
@@ -595,6 +751,18 @@ move.one.mag = function(current.eqmag){
 
 }
 
+# Summary: this method proposes a move generated by adding ln-t distributed variables to all reaction equilibria`
+#
+# Parameters:
+#       current.eqmag: an SxS matrix M, where M[i,j] = ln(Keq) of the reaction from
+#		   				  state j to state i if i > j, ln(rate constant of reaction from 
+#		   				  state j to state i in units 1/sec) if i < j, or -Inf if j == i. For expedience,
+#		   				  all forbidden reaction will have ln(Keq) == ln(rate) == -Inf 
+#
+# Returns: an SxS matrix M, where M[i,j] = ln(Keq) of the reaction from
+#		   state j to state i if i > j, ln(rate constant of reaction from 
+#		   state j to state i in units 1/sec) if i < j, or -Inf if j == i. For expedience,
+#		    all forbidden reaction will have ln(Keq) == ln(rate) == -Inf 
 move.all.eqs = function(current.eqmag){
 
 	new.eqmag = current.eqmag
@@ -610,6 +778,18 @@ move.all.eqs = function(current.eqmag){
 
 }
 
+# Summary: this method proposes a move generated by adding a ln-t distributed variable to a reaction equilibrium`
+#
+# Parameters:
+#       current.eqmag: an SxS matrix M, where M[i,j] = ln(Keq) of the reaction from
+#		   				  state j to state i if i > j, ln(rate constant of reaction from 
+#		   				  state j to state i in units 1/sec) if i < j, or -Inf if j == i. For expedience,
+#		   				  all forbidden reaction will have ln(Keq) == ln(rate) == -Inf 
+#
+# Returns: an SxS matrix M, where M[i,j] = ln(Keq) of the reaction from
+#		   state j to state i if i > j, ln(rate constant of reaction from 
+#		   state j to state i in units 1/sec) if i < j, or -Inf if j == i. For expedience,
+#		    all forbidden reaction will have ln(Keq) == ln(rate) == -Inf 
 move.one.eq = function(current.eqmag){
 	
 	new.eqmag = current.eqmag
@@ -626,6 +806,18 @@ move.one.eq = function(current.eqmag){
 
 }
 
+# Summary: this method proposes a move generated by randomly generating all reaction magnitudes`de novo
+#
+# Parameters:
+#       current.eqmag: an SxS matrix M, where M[i,j] = ln(Keq) of the reaction from
+#		   				  state j to state i if i > j, ln(rate constant of reaction from 
+#		   				  state j to state i in units 1/sec) if i < j, or -Inf if j == i. For expedience,
+#		   				  all forbidden reaction will have ln(Keq) == ln(rate) == -Inf 
+#
+# Returns: an SxS matrix M, where M[i,j] = ln(Keq) of the reaction from
+#		   state j to state i if i > j, ln(rate constant of reaction from 
+#		   state j to state i in units 1/sec) if i < j, or -Inf if j == i. For expedience,
+#		    all forbidden reaction will have ln(Keq) == ln(rate) == -Inf 
 conjure.all.mags = function(current.eqmag){
 
 	new.eqmag = current.eqmag
@@ -638,6 +830,18 @@ conjure.all.mags = function(current.eqmag){
 
 }
 
+# Summary: this method proposes a move generated by randomly generating a reaction magnitude`de novo
+#
+# Parameters:
+#       current.eqmag: an SxS matrix M, where M[i,j] = ln(Keq) of the reaction from
+#		   				  state j to state i if i > j, ln(rate constant of reaction from 
+#		   				  state j to state i in units 1/sec) if i < j, or -Inf if j == i. For expedience,
+#		   				  all forbidden reaction will have ln(Keq) == ln(rate) == -Inf 
+#
+# Returns: an SxS matrix M, where M[i,j] = ln(Keq) of the reaction from
+#		   state j to state i if i > j, ln(rate constant of reaction from 
+#		   state j to state i in units 1/sec) if i < j, or -Inf if j == i. For expedience,
+#		    all forbidden reaction will have ln(Keq) == ln(rate) == -Inf 
 conjure.one.mag = function(current.eqmag){
 	
 	new.eqmag = current.eqmag
@@ -652,6 +856,18 @@ conjure.one.mag = function(current.eqmag){
 
 }
 
+# Summary: this method proposes a move generated by randomly generating all reaction equilibria`de novo
+#
+# Parameters:
+#       current.eqmag: an SxS matrix M, where M[i,j] = ln(Keq) of the reaction from
+#		   				  state j to state i if i > j, ln(rate constant of reaction from 
+#		   				  state j to state i in units 1/sec) if i < j, or -Inf if j == i. For expedience,
+#		   				  all forbidden reaction will have ln(Keq) == ln(rate) == -Inf 
+#
+# Returns: an SxS matrix M, where M[i,j] = ln(Keq) of the reaction from
+#		   state j to state i if i > j, ln(rate constant of reaction from 
+#		   state j to state i in units 1/sec) if i < j, or -Inf if j == i. For expedience,
+#		    all forbidden reaction will have ln(Keq) == ln(rate) == -Inf 
 conjure.all.eqs = function(current.eqmag){
 
 	new.eqmag = current.eqmag
@@ -664,6 +880,18 @@ conjure.all.eqs = function(current.eqmag){
 
 }
 
+# Summary: this method proposes a move generated by randomly generating a reaction equilibrium`de novo
+#
+# Parameters:
+#       current.eqmag: an SxS matrix M, where M[i,j] = ln(Keq) of the reaction from
+#		   				  state j to state i if i > j, ln(rate constant of reaction from 
+#		   				  state j to state i in units 1/sec) if i < j, or -Inf if j == i. For expedience,
+#		   				  all forbidden reaction will have ln(Keq) == ln(rate) == -Inf 
+#
+# Returns: an SxS matrix M, where M[i,j] = ln(Keq) of the reaction from
+#		   state j to state i if i > j, ln(rate constant of reaction from 
+#		   state j to state i in units 1/sec) if i < j, or -Inf if j == i. For expedience,
+#		    all forbidden reaction will have ln(Keq) == ln(rate) == -Inf 
 conjure.one.eq = function(current.eqmag){
 	
 	new.eqmag = current.eqmag
@@ -678,6 +906,19 @@ conjure.one.eq = function(current.eqmag){
 
 }
 
+# Summary: this method implements a single MCMC step
+#
+# Parameters:
+#       full.current.rates: A list with the following components
+#					  eqmag: an SxS matrix M, where M[i,j] = ln(Keq) of the reaction from
+#		   				  	state j to state i if i > j, ln(rate constant of reaction from 
+#		   				  	state j to state i in units 1/sec) if i < j, or -Inf if j == i. For expedience,
+#		   				 	all forbidden reaction will have ln(Keq) == ln(rate) == -Inf 
+#                      likelihood: a double indicating the approximate ln density of the rates in the step
+#                      accepted: a boolean which is TRUE if the rates were accepted from a new move
+#                      move: an integer denoting which move was attempted at the last step
+#
+# Returns: A list with the same components as above, after a move was attempted on it
 
 do.move = function(full.current.rates,experiments.per.iter){
 
@@ -708,8 +949,6 @@ do.move = function(full.current.rates,experiments.per.iter){
 	print("new like")
 	print(new.like)
 
-	print(paste("Distance",sqrt(sum((new.eqmag-full.current.rates$eqmag)^2))))
-
 	if(accept.test(new.like.ast,full.current.rates$likelihood)){
 		return(list(eqmag = new.eqmag, likelihood = new.like, accepted = TRUE,move = move))
 	}
@@ -719,6 +958,7 @@ do.move = function(full.current.rates,experiments.per.iter){
 
 }
 
+#this is simply a wrapper for the abind function to make it easier to implement for the parallelizer
 special.abind = function(arr1,arr2){
 	
 	return(abind(arr1,arr2,along = 3))
