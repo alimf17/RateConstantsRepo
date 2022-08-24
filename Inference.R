@@ -280,6 +280,7 @@ experiment.simulation = function(current.rates){
 
     damount = matrix(rep(0,nrow(experiment)*ncol(experiment)),nrow = nrow(experiment))
 
+	stat = 1:ncol(experiment)
 
 	while(time < tau){
 
