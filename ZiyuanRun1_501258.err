@@ -1,0 +1,24 @@
+Lmod has detected the following error: The following module(s) are unknown:
+"R"
+
+Please check the spelling or version number. Also try "module spider ..."
+It is also possible your cache file is out-of-date; it may help to try:
+  $ module --ignore_cache load "R"
+
+Also make sure that all modulefiles written in TCL start with the string
+#%Module
+
+
+
+Loading required package: foreach
+Loading required package: iterators
+Loading required package: parallel
+Warning messages:
+1: package ‘doParallel’ was built under R version 4.1.1 
+2: package ‘foreach’ was built under R version 4.1.1 
+3: package ‘iterators’ was built under R version 4.1.1 
+Error in library(pracma, lib.loc = "/home/alimf/R/x86_64-pc-linux-gnu-library/4.2/") : 
+  no library trees found in 'lib.loc'
+Calls: source -> withVisible -> eval -> eval -> library
+Execution halted
+slurmstepd: error: *** JOB 501258 ON a242 CANCELLED AT 2022-08-29T11:46:01 ***

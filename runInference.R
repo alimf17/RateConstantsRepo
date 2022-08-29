@@ -67,6 +67,8 @@ if(exists("pars.init")){
     main(experiment,equilibria = equilibria, total.iter = steps,experiments.per.iter = 10000,cores = cores,name = paste(output,prefix,sep = ''),init.rates=pars.init, kill.rates = kill.rates)
 } else{
 
+    print("kill")
+    print(kill.rates)
     main(experiment,equilibria = equilibria, total.iter = steps,experiments.per.iter = 10000,cores = cores,name = paste(output,prefix, sep =''), kill.rates = kill.rates)
 }
 Rprof(NULL)

@@ -1,8 +1,8 @@
 #!/bin/bash
 
 
-#SBATCH --account=sigbio_project7
-#SBATCH --partition=sigbio
+#SBATCH --account=mcb140220
+#SBATCH --partition=shared
 #SBATCH --job-name=ZiyuanRun1  # job name
 #SBATCH --output=%x_%j.log             # stdout fname (will be <job-name>_<job_id??>.log) Not sure about job_id here to be honest. It's numbers... just numbers.
 #SBATCH --error=%x_%j.err              # stderr fname

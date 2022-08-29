@@ -81,7 +81,9 @@ main = function(raw.experiment, equilibria=calcEQs(raw.experiment), total.iter =
     step.save = max(floor(total.iter/save.runs),1)
 
     #We forbid transition possibilities from being nonsymmetric
-    if(!isSymmetric(kill.rates) || any(diag(kill.rates) != 0) || any(kill.rates !=0 | kill.rates != 1)){
+    if(!isSymmetric(kill.rates) || any(diag(kill.rates) != 0) || any(kill.rates !=0 & kill.rates != 1)){
+        print("kill")
+        print(kill.rates)
         stop("Non symmetric transition allowances are forbidden, and we require self transition rates to be set at zero")
     }
 
@@ -90,7 +92,7 @@ main = function(raw.experiment, equilibria=calcEQs(raw.experiment), total.iter =
         
 
     cl <- makeForkCluster(cores) 
-    registerDoParallel(cores)
+    registerDoParallel(cl)
 
     #This is a flat out semi decent guess on rate constants
     if(is.null(init.rates)){

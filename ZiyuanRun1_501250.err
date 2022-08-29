@@ -1,0 +1,29 @@
+Lmod has detected the following error: The following module(s) are unknown:
+"R"
+
+Please check the spelling or version number. Also try "module spider ..."
+It is also possible your cache file is out-of-date; it may help to try:
+  $ module --ignore_cache load "R"
+
+Also make sure that all modulefiles written in TCL start with the string
+#%Module
+
+
+
+runZiyuanRates.sh: line 14: Rscript: command not found
+/usr/local/bin/bash: /scratch/sigbio_project_root/sigbio_project7/alimf/bufferRates/ZiyuanRun1epe1A: No such file or directory
+/usr/local/bin/bash: /scratch/sigbio_project_root/sigbio_project7/alimf/bufferRates/ZiyuanRun1nmt81chp2A: No such file or directory
+/usr/local/bin/bash: /scratch/sigbio_project_root/sigbio_project7/alimf/bufferRates/ZiyuanRun1nmt81clr3A: No such file or directory
+/usr/local/bin/bash: /scratch/sigbio_project_root/sigbio_project7/alimf/bufferRates/ZiyuanRun1nmt81mit1A: No such file or directory
+/usr/local/bin/bash: /scratch/sigbio_project_root/sigbio_project7/alimf/bufferRates/ZiyuanRun1epe1B: No such file or directory
+/usr/local/bin/bash: /scratch/sigbio_project_root/sigbio_project7/alimf/bufferRates/ZiyuanRun1nmt81chp2B: No such file or directory
+/usr/local/bin/bash: /scratch/sigbio_project_root/sigbio_project7/alimf/bufferRates/ZiyuanRun1nmt81clr3B: No such file or directory
+/usr/local/bin/bash: /scratch/sigbio_project_root/sigbio_project7/alimf/bufferRates/ZiyuanRun1nmt81mit1B: No such file or directory
+/usr/local/bin/bash: /scratch/sigbio_project_root/sigbio_project7/alimf/bufferRates/ZiyuanRun1epe1C: No such file or directory
+/usr/local/bin/bash: /scratch/sigbio_project_root/sigbio_project7/alimf/bufferRates/ZiyuanRun1nmt81chp2C: No such file or directory
+/usr/local/bin/bash: /scratch/sigbio_project_root/sigbio_project7/alimf/bufferRates/ZiyuanRun1nmt81clr3C: No such file or directory
+/usr/local/bin/bash: /scratch/sigbio_project_root/sigbio_project7/alimf/bufferRates/ZiyuanRun1nmt81mit1C: No such file or directory
+/usr/local/bin/bash: /scratch/sigbio_project_root/sigbio_project7/alimf/bufferRates/ZiyuanRun1epe1D: No such file or directory
+/usr/local/bin/bash: /scratch/sigbio_project_root/sigbio_project7/alimf/bufferRates/ZiyuanRun1nmt81chp2D: No such file or directory
+/usr/local/bin/bash: /scratch/sigbio_project_root/sigbio_project7/alimf/bufferRates/ZiyuanRun1nmt81clr3D: No such file or directory
+/usr/local/bin/bash: /scratch/sigbio_project_root/sigbio_project7/alimf/bufferRates/ZiyuanRun1nmt81mit1D: No such file or directory
