@@ -82,8 +82,6 @@ main = function(raw.experiment, equilibria=calcEQs(raw.experiment), total.iter =
 
     #We forbid transition possibilities from being nonsymmetric
     if(!isSymmetric(kill.rates) || any(diag(kill.rates) != 0) || any(kill.rates !=0 & kill.rates != 1)){
-        print("kill")
-        print(kill.rates)
         stop("Non symmetric transition allowances are forbidden, and we require self transition rates to be set at zero")
     }
 
