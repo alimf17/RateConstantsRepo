@@ -1,4 +1,4 @@
-library(pracma)
+library(pracma, lib.loc="/home/alimf/R/x86_64-pc-linux-gnu-library/4.2/")
 
 
 # Summary: this method calculates the theoretical equilibria of a set of transition PROBABILITY matrices
