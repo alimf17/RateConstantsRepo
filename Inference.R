@@ -171,7 +171,7 @@ main = function(raw.experiment, equilibria=calcEQs(raw.experiment), total.iter =
     #Convergent likelihoods look like a fuzzy caterpillar
     #To a first approximation
     for(i in 1:length(likelihoods)){
-        tests = paramter.inference[[i]]
+        tests = parameter.inference[[i]]
         likelihoods[i] = tests$likelihood
     }
     png(file=paste(name,"Likelihoods.png"))
