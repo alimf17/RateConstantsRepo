@@ -57,6 +57,9 @@ if(adjacentOnly){
 if(length(args)>6){
     pars = readRDS(args[7])
     pars.init = pars[[length(pars)]]$eqmag
+    if(is.null(pars.init)){
+        pars.init = rates.to.eqmag(pars[[length(pars)]]$rates)
+    }
 }
 
 print("should pars.init")

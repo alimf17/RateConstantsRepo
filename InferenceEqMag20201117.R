@@ -13,7 +13,7 @@ totalmols = 1500
 
 
 #The total number of moves
-total.move = 8
+total.move = 4
 
 #Length of the experiment in seconds
 tau = 0.04
@@ -83,7 +83,7 @@ main = function(raw.experiment, equilibria=calcEQs(raw.experiment), total.iter =
     step.save = max(floor(total.iter/save.runs),1)
 
     #We forbid transition possibilities from being nonsymmetric
-    if(!isSymmetric(kill.rates) || any(diag(kill.rates) != 0) || any(kill.rates !=0 | kill.rates != 1)){
+    if(!isSymmetric(kill.rates) || any(diag(kill.rates) != 0) || any(kill.rates !=0 & kill.rates != 1)){
         stop("Non symmetric transition allowances are forbidden, and we require self transition rates to be set at zero")
     }
 
@@ -102,6 +102,8 @@ main = function(raw.experiment, equilibria=calcEQs(raw.experiment), total.iter =
 	    init.eqmag = do.move(list(eqmag = init.eqmag,likelihood = log.likelihood.main(init.eqmag,experiments.per.iter),accepted = TRUE),experiments.per.iter)
     }
 
+    print("ini")
+    print(init.eqmag)
     #parameter.inference is the list containing all of the states of the monte carlo chain
     #It is a list of lists, where each sublist contains a matrix encoding the rate constants,
     #the log likelihood of these rate constants, and whether the preceeding move was accepted or not
@@ -446,6 +448,7 @@ simulations.calculator = function(current.rates,experiments.per.iter){
 		transition.matrix
 }
 
+    #print(transition.big.array)
 
 	
 	return(transition.big.array)
@@ -516,6 +519,7 @@ log.likelihood.experiment = function(current.rates,experiments.per.iter){
         }
     }
 
+    return(sum(logliks))
 
 }
 

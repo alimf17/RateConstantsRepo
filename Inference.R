@@ -13,7 +13,7 @@ totalmols = 1500
 
 
 #The total number of moves
-total.move = 5
+total.move = 3
 
 #Length of the experiment in seconds
 tau = 0.04
